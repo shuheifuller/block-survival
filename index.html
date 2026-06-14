@@ -190,6 +190,23 @@ canvas { display: block; }
 .overlay button.mc-btn:hover { background: #7d8d6e; transform: none; }
 .overlay button.mc-btn:active { box-shadow: inset 3px 3px 0 rgba(0,0,0,0.5); }
 
+/* ── Difficulty selector ── */
+#difficulty-select { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.diff-label { color: #ffe27a; font-weight: bold; letter-spacing: 3px; font-size: 14px; text-shadow: 1px 1px 2px #000; }
+.diff-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.overlay button.diff-btn {
+  font-family: 'Courier New', monospace; font-weight: bold; font-size: 16px;
+  color: #fff; text-shadow: 2px 2px 0 #1a1a1a; letter-spacing: 0; margin-top: 0;
+  background: #6b6b6b; border: 3px solid #000; border-radius: 0;
+  box-shadow: inset 2px 2px 0 rgba(255,255,255,0.28), inset -3px -3px 0 rgba(0,0,0,0.5);
+  padding: 10px 20px; min-width: 116px; max-width: none; cursor: pointer; image-rendering: pixelated;
+}
+.overlay button.diff-btn:hover { background: #7d8d6e; transform: none; }
+.overlay button.diff-btn.selected { background: #5dff6e; color: #0a2a0a; text-shadow: none;
+  box-shadow: inset 2px 2px 0 rgba(255,255,255,0.45), inset -3px -3px 0 rgba(0,0,0,0.3); }
+#diff-desc { color: #cfe9ff; font-size: 13px; min-height: 18px; text-shadow: 1px 1px 2px #000; }
+#mode-display { border-color: #5dff6e; color: #aef7b6; }
+
 /* ── On-screen touch controls ── */
 #touch-controls { position: absolute; inset: 0; display: none; }
 body.touch.playing #touch-controls { display: block; }
@@ -222,6 +239,7 @@ body.touch.playing #touch-controls { display: block; }
   <div id="crosshair">+</div>
 
   <div id="top-hud">
+    <div class="hud-box" id="mode-display">NORMAL</div>
     <div class="hud-box" id="wave-display">WAVE 1</div>
     <div class="hud-box" id="enemies-display">ENEMIES: 0</div>
     <div class="hud-box" id="score-display">SCORE: 0</div>
@@ -264,6 +282,15 @@ body.touch.playing #touch-controls { display: block; }
       B — Upgrades &nbsp;|&nbsp; 1-5 — Switch weapons &nbsp;|&nbsp; (Mouse: drag to look, press to shoot)<br>
       On iPad: use the on-screen sticks &amp; buttons. Kill mobs for 🪙 tokens, buy better guns, survive!
     </p>
+    <div id="difficulty-select">
+      <div class="diff-label">CHOOSE DIFFICULTY</div>
+      <div class="diff-buttons">
+        <button class="diff-btn selected" data-diff="normal">Normal</button>
+        <button class="diff-btn" data-diff="hard">Hard</button>
+        <button class="diff-btn" data-diff="extreme">Extreme</button>
+      </div>
+      <div id="diff-desc">Fewer monsters &amp; generous tokens — upgrade your guns fast.</div>
+    </div>
     <button id="start-btn" class="mc-btn">Play Game</button>
   </div>
 
@@ -305,6 +332,16 @@ const BASE_SPEED = 6;
 const TURN_RATE = 2.6;
 const TAU = Math.PI * 2;
 const UP = new THREE.Vector3(0, 1, 0);
+
+// ─── Difficulty ──────────────────────────────────────────────────────────────
+// Extreme = the original tuning. Normal/Hard reduce monster counts and (Normal especially)
+// boost token drops so guns can be upgraded quickly.
+const DIFFICULTIES = {
+  normal:  { label: 'Normal',  enemyMult: 0.45, chanceMult: 3.0, amountMult: 4,   desc: 'Fewer monsters & generous tokens — upgrade your guns fast.' },
+  hard:    { label: 'Hard',    enemyMult: 0.7,  chanceMult: 1.4, amountMult: 1.5, desc: 'More monsters, fewer tokens. A real fight.' },
+  extreme: { label: 'Extreme', enemyMult: 1.0,  chanceMult: 1.0, amountMult: 1,   desc: 'Full swarms & stingy token drops. The original challenge.' },
+};
+let currentDifficulty = 'normal';
 
 // ─── Three.js setup ──────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: false });
@@ -520,6 +557,24 @@ const arrowMat  = new THREE.MeshLambertMaterial({ color: 0x6b5a3a });
 const hpBgMat   = new THREE.MeshBasicMaterial({ color: 0x330000, side: THREE.DoubleSide });
 const hpFgMat   = new THREE.MeshBasicMaterial({ color: 0x33dd33, side: THREE.DoubleSide });
 
+// ─── Collision ───────────────────────────────────────────────────────────────
+// Solid field objects as XZ circles: {x, z, r (block radius), h (height — for arrows)}
+const obstacles = [];
+const PLAYER_R = 0.45;
+const ENEMY_R = 0.42;
+// Push a circle (pos.x/pos.z) out of any overlapping obstacle.
+function resolveObstacles(pos, radius) {
+  for (const o of obstacles) {
+    const dx = pos.x - o.x, dz = pos.z - o.z;
+    const d = Math.hypot(dx, dz), minD = o.r + radius;
+    if (d < minD) {
+      if (d < 1e-4) { pos.x += minD; continue; }
+      pos.x = o.x + (dx / d) * minD;
+      pos.z = o.z + (dz / d) * minD;
+    }
+  }
+}
+
 // ─── World ───────────────────────────────────────────────────────────────────
 function buildWorld() {
   const ground = new THREE.Mesh(new THREE.BoxGeometry(ARENA_SIZE * 2, 0.5, ARENA_SIZE * 2), groundMats);
@@ -571,6 +626,7 @@ function addTree(x, z) {
   const trunkH = 3 + Math.random() * 1.5;
   const trunk = new THREE.Mesh(new THREE.BoxGeometry(0.8, trunkH, 0.8), woodMat);
   trunk.position.set(x, trunkH / 2, z); trunk.castShadow = true; scene.add(trunk);
+  obstacles.push({ x, z, r: 0.5, h: trunkH + 2 });   // trunk blocks movement; tall enough to stop arrows
   // layered leaf canopy
   const s = 2.4 + Math.random() * 0.6;
   const c1 = new THREE.Mesh(new THREE.BoxGeometry(s, 1.2, s), leavesMat);
@@ -586,6 +642,7 @@ function addRock(x, z) {
     m.position.set(x + (Math.random() - 0.5) * 1.6, s / 2, z + (Math.random() - 0.5) * 1.6);
     m.rotation.y = Math.random() * 0.4; m.castShadow = true; m.receiveShadow = true; scene.add(m);
   }
+  obstacles.push({ x, z, r: 1.0, h: 1.2 });   // low cluster: blocks walking, arrows can clear the top
 }
 const flowerColors = [0xff4d4d, 0xffd84d, 0xffffff, 0xd24dff, 0xff944d];
 function addFlower(x, z) {
@@ -856,9 +913,12 @@ function killEnemy(e, byPlayer) {
   removeEnemy(e);
   waveState.score += e.def.score;
   if (byPlayer && e.def.tokenChance > 0) {
-    if (e.def.tokenChance >= 1 || Math.random() < e.def.tokenChance) {
-      player.tokens += e.def.tokens;
-      spawnTokenPopup(e.group.position, e.def.tokens);
+    const diff = DIFFICULTIES[currentDifficulty];
+    const chance = Math.min(1, e.def.tokenChance * diff.chanceMult);
+    if (chance >= 1 || Math.random() < chance) {
+      const amt = Math.max(1, Math.round(e.def.tokens * diff.amountMult));
+      player.tokens += amt;
+      spawnTokenPopup(e.group.position, amt);
       playToken();
     }
   }
@@ -953,6 +1013,14 @@ function updateEnemyProjectiles(delta) {
     if (!remove && a.mesh.position.distanceTo(torso) < 0.9 && !player.dead) {
       damagePlayer(a.damage); remove = true;
     }
+    // Blocked by field objects (only those tall enough at the arrow's height)
+    if (!remove) {
+      for (const o of obstacles) {
+        if (a.mesh.position.y < o.h && Math.hypot(a.mesh.position.x - o.x, a.mesh.position.z - o.z) < o.r) {
+          addHitParticles(a.mesh.position.clone(), 0xbbbbbb, 3); remove = true; break;
+        }
+      }
+    }
     if (remove) { scene.remove(a.mesh); a.mesh.geometry.dispose(); enemyProjectiles.splice(i, 1); }
   }
 }
@@ -968,7 +1036,8 @@ function startWave(n) {
   const sm = Math.min(1 + n * 0.05, 1.7);
   waveState.speedMult = sm;
 
-  const counts = {
+  // Extreme = the original full counts; Normal/Hard scale them down (still gradual with n).
+  const base = {
     zombie: 3 + Math.floor(n * 1.4),
     skeleton: n >= 2 ? 1 + Math.floor(n * 0.6) : 0,
     spider: n >= 3 ? Math.floor(n * 0.7) : 0,
@@ -976,7 +1045,12 @@ function startWave(n) {
     slime: n >= 2 ? 1 + Math.floor(n * 0.4) : 0,
     enderman: n >= 6 ? Math.floor((n - 5) * 0.5) : 0,
   };
-  for (const type in counts) for (let i = 0; i < counts[type]; i++) spawnEnemy(type, sm);
+  const m = DIFFICULTIES[currentDifficulty].enemyMult;
+  for (const type in base) {
+    let c = m >= 1 ? base[type] : Math.round(base[type] * m);
+    if (type === 'zombie') c = Math.max(1, c);   // always at least one zombie
+    for (let i = 0; i < c; i++) spawnEnemy(type, sm);
+  }
 
   showAnnouncement(`WAVE ${n}`);
   updateHUD();
@@ -1217,6 +1291,7 @@ function updatePlayer(delta) {
     moveDir.multiplyScalar(BASE_SPEED * player.speedMult * delta);
     moveDir.applyAxisAngle(UP, player.yaw);
     player.group.position.add(moveDir);
+    resolveObstacles(player.group.position, PLAYER_R);   // blocked by trees / boulders
     player.group.position.x = Math.max(-ARENA_SIZE + 1, Math.min(ARENA_SIZE - 1, player.group.position.x));
     player.group.position.z = Math.max(-ARENA_SIZE + 1, Math.min(ARENA_SIZE - 1, player.group.position.z));
     player.walkCycle += delta * 8;
@@ -1301,6 +1376,9 @@ function updateEnemies(delta) {
         if (dist < e.def.range + 0.1 && e.attackCooldown <= 0) { damagePlayer(e.damage); e.attackCooldown = 1.3; }
       }
     }
+
+    // blocked by trees / boulders (monsters can't walk through them either)
+    resolveObstacles(e.group.position, ENEMY_R);
 
     // limb animation
     if (moving) e.walkCycle += delta * 7;
@@ -1449,7 +1527,7 @@ document.getElementById('shop-close').addEventListener('click', closeShop);
 function triggerGameOver() {
   player.dead = true; gameRunning = false; fireHeld = false; mouseDrag = false;
   document.body.classList.remove('playing');
-  document.getElementById('go-wave').textContent = `Wave Reached: ${waveState.wave}`;
+  document.getElementById('go-wave').textContent = `${DIFFICULTIES[currentDifficulty].label} · Wave Reached: ${waveState.wave}`;
   document.getElementById('go-score').textContent = `Final Score: ${waveState.score}`;
   document.getElementById('gameover-screen').style.display = 'flex';
 }
@@ -1479,15 +1557,29 @@ function resetGame() {
   muzzleLight.intensity = 0; boomLight.intensity = 0;
   gameRunning = true;
   document.body.classList.add('playing');
+  updateModeHUD();
   startWave(1);
 }
 
 // ─── Buttons ─────────────────────────────────────────────────────────────────
+function updateModeHUD() {
+  document.getElementById('mode-display').textContent = DIFFICULTIES[currentDifficulty].label.toUpperCase();
+}
+// Difficulty selection on the start screen
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentDifficulty = btn.dataset.diff;
+    document.querySelectorAll('.diff-btn').forEach(b => b.classList.toggle('selected', b === btn));
+    document.getElementById('diff-desc').textContent = DIFFICULTIES[currentDifficulty].desc;
+  });
+});
+
 document.getElementById('start-btn').addEventListener('click', () => {
   initAudio();
   document.getElementById('start-screen').style.display = 'none';
   gameRunning = true;
   document.body.classList.add('playing');
+  updateModeHUD();
   startWave(1);
 });
 document.getElementById('restart-btn').addEventListener('click', () => { initAudio(); resetGame(); });
