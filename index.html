@@ -1162,8 +1162,9 @@ function updatePlayer(delta) {
   const turnInput = (turn.left ? 1 : 0) - (turn.right ? 1 : 0) - touch.lx;
   player.yaw += turnInput * TURN_RATE * delta;
 
-  // Movement: arrow keys + left touch stick, relative to facing
-  const strafe = (move.right ? 1 : 0) - (move.left ? 1 : 0) + touch.mx;
+  // Movement: arrow keys + left touch stick, relative to facing.
+  // Camera looks down +z, so screen-right is world -x — hence the inverted strafe sign.
+  const strafe = (move.left ? 1 : 0) - (move.right ? 1 : 0) - touch.mx;
   const forward = (move.fwd ? 1 : 0) - (move.back ? 1 : 0) - touch.my;
   moveDir.set(strafe, 0, forward);
   const isMoving = moveDir.lengthSq() > 0.0004;
