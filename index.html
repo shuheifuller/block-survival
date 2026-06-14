@@ -417,18 +417,51 @@ const texLeaves = makeTexture(16, 16, (ctx) => {
 });
 
 // ─── Character textures (Steve) ──────────────────────────────────────────────
-const texSteveSkin  = noiseTex(190, 145, 110, 18, 9);
-const texSteveShirt = noiseTex(40, 170, 170, 16, 10);   // cyan
-const texSteveLegs  = noiseTex(50, 56, 130, 14, 11);    // denim
 function px(ctx, x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); }
+const STEVE_HAIR = '#3a2718';
+
+const texSteveSkin  = noiseTex(181, 136, 99, 16, 9);
+const texSteveShirt = noiseTex(33, 156, 156, 14, 10);   // teal
+// Hair (top + back of the head): brown all over
+const texSteveHair  = noiseTex(58, 39, 25, 14, 12);
+// Side of the head: brown hair on top, skin below (with a sideburn at the front edge)
+const texSteveHeadSide = makeTexture(16, 16, (ctx) => {
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const n = noise(x, y, 9); px(ctx, x, y, 1, 1, `rgb(${175 + n * 20 | 0},${131 + n * 18 | 0},${95 + n * 16 | 0})`);
+  }
+  px(ctx, 0, 0, 16, 6, STEVE_HAIR);                 // hair cap
+  px(ctx, 12, 6, 4, 3, STEVE_HAIR);                 // sideburn toward the face
+});
+// Arm: short teal sleeve on top, bare skin (hand) below
+const texSteveArm = makeTexture(16, 16, (ctx) => {
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const n = noise(x, y, 13);
+    if (y < 6) px(ctx, x, y, 1, 1, `rgb(${30 + n * 16 | 0},${150 + n * 26 | 0},${150 + n * 24 | 0})`);   // sleeve
+    else       px(ctx, x, y, 1, 1, `rgb(${175 + n * 20 | 0},${131 + n * 18 | 0},${95 + n * 16 | 0})`);    // hand/skin
+  }
+});
+// Legs: denim with dark-grey shoes at the bottom
+const texSteveLegs = makeTexture(16, 16, (ctx) => {
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const n = noise(x, y, 11);
+    if (y < 13) px(ctx, x, y, 1, 1, `rgb(${46 + n * 16 | 0},${52 + n * 16 | 0},${126 + n * 26 | 0})`);    // jeans
+    else        px(ctx, x, y, 1, 1, `rgb(${58 + n * 12 | 0},${58 + n * 12 | 0},${64 + n * 12 | 0})`);     // shoe
+  }
+});
+// Face: hair fringe, brows, two-tone Steve eyes, nose, mouth
 const texSteveFace = makeTexture(16, 16, (ctx) => {
-  px(ctx, 0, 0, 16, 16, '#b58863');                 // skin
-  px(ctx, 0, 0, 16, 5, '#3a2a17');                  // hair top
-  px(ctx, 0, 5, 2, 3, '#3a2a17'); px(ctx, 14, 5, 2, 3, '#3a2a17'); // sideburns
-  px(ctx, 3, 7, 3, 2, '#ffffff'); px(ctx, 10, 7, 3, 2, '#ffffff'); // eye whites
-  px(ctx, 4, 7, 2, 2, '#3b3b8f'); px(ctx, 10, 7, 2, 2, '#3b3b8f'); // pupils
-  px(ctx, 7, 9, 2, 2, '#9c6b4a');                   // nose
-  px(ctx, 5, 12, 6, 1, '#6e4326');                  // mouth
+  for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) {
+    const n = noise(x, y, 9); px(ctx, x, y, 1, 1, `rgb(${177 + n * 20 | 0},${133 + n * 18 | 0},${97 + n * 16 | 0})`);
+  }
+  px(ctx, 0, 0, 16, 4, STEVE_HAIR);                                   // hair fringe
+  px(ctx, 0, 4, 2, 2, STEVE_HAIR); px(ctx, 14, 4, 2, 2, STEVE_HAIR);  // temples
+  px(ctx, 3, 6, 3, 1, '#5b3a22');  px(ctx, 10, 6, 3, 1, '#5b3a22');   // eyebrows
+  // eyes: white outer, brown iris, indigo inner (classic two-tone)
+  px(ctx, 3, 7, 1, 2, '#ffffff'); px(ctx, 4, 7, 1, 2, '#6b4a2a'); px(ctx, 5, 7, 1, 2, '#2e2e7a');
+  px(ctx, 12, 7, 1, 2, '#ffffff'); px(ctx, 11, 7, 1, 2, '#6b4a2a'); px(ctx, 10, 7, 1, 2, '#2e2e7a');
+  px(ctx, 7, 9, 2, 2, '#9c6b4a');                                     // nose
+  px(ctx, 5, 12, 6, 1, '#6e4326');                                    // mouth
+  px(ctx, 5, 13, 6, 1, '#a4704a');                                    // chin shade
 });
 
 // ─── Mob textures ────────────────────────────────────────────────────────────
@@ -584,12 +617,23 @@ function headWithFace(size, sideMat, faceTex, yPos) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), mats);
   m.position.set(0, yPos, 0); m.castShadow = true; return m;
 }
+// Steve head: face on the front, brown hair wrapping top/back/sides, skin under the chin
+function buildSteveHead(size, yPos) {
+  const skin = new THREE.MeshLambertMaterial({ map: texSteveSkin });
+  const hair = new THREE.MeshLambertMaterial({ map: texSteveHair });
+  const side = new THREE.MeshLambertMaterial({ map: texSteveHeadSide });
+  const face = new THREE.MeshLambertMaterial({ map: texSteveFace });
+  const mats = [side, side, hair, skin, face, hair]; // +x,-x,+y(top hair),-y(chin),+z(face),-z(back hair)
+  const m = new THREE.Mesh(new THREE.BoxGeometry(size, size, size), mats);
+  m.position.set(0, yPos, 0); m.castShadow = true; return m;
+}
 
 // Humanoid (Steve / zombie / skeleton): feet at local y=0, faces +z
 function buildHumanoid(o) {
   const g = new THREE.Group();
   const aw = o.slim ? 0.26 : 0.32;
-  g.head = headWithFace(0.78, o.headMat, o.faceTex, 2.5); g.add(g.head);
+  g.head = o.buildHead ? o.buildHead(0.78, 2.5) : headWithFace(0.78, o.headMat, o.faceTex, 2.5);
+  g.add(g.head);
   g.body = makeBox(0.72, 1.1, 0.4, o.bodyMat, 0, 1.55, 0); g.add(g.body);
   g.lArm = limb(aw, 1.0, aw, o.armMat, -(0.36 + aw / 2), 2.0, 0);
   g.rArm = limb(aw, 1.0, aw, o.armMat, (0.36 + aw / 2), 2.0, 0);
@@ -730,9 +774,9 @@ const playerGroup = new THREE.Group();
 scene.add(playerGroup);
 
 const playerModel = buildHumanoid({
-  headMat: new THREE.MeshLambertMaterial({ map: texSteveSkin }), faceTex: texSteveFace,
+  buildHead: buildSteveHead,
   bodyMat: new THREE.MeshLambertMaterial({ map: texSteveShirt }),
-  armMat: new THREE.MeshLambertMaterial({ map: texSteveSkin }),
+  armMat: new THREE.MeshLambertMaterial({ map: texSteveArm }),   // teal short sleeve + skin hands
   legMat: new THREE.MeshLambertMaterial({ map: texSteveLegs }),
   armBase: -1.15, armSway: 0,           // both arms raised forward holding the gun
 });
